@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="Audible.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="3"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="1177"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><table title="Audible" custom_title="0" dock_id="1" table="4,7:mainAudible"/><dock_state state="000000ff00000000fd00000001000000020000054a0000024ffc0100000001fb000000160064006f0063006b00420072006f007700730065003101000000000000054a0000011e00ffffff000002690000000000000004000000040000000800000008fc00000000"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="Audible" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_" freeze_columns="0"><sort/><column_widths><column index="1" value="300"/><column index="2" value="279"/><column index="3" value="55"/><column index="4" value="143"/><column index="5" value="47"/><column index="6" value="300"/><column index="7" value="191"/><column index="8" value="300"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="EDA">SELECT * FROM Audible_2020 LIMIT 5;</sql><sql name="EDA">SELECT COUNT(*) FROM Audible_2020;</sql><sql name="EDA">SELECT 
+  COUNT(*) as total,
+  COUNT(&quot;Book Name&quot;) as has_name,
+  COUNT(&quot;Rating&quot;) as has_rating,
+  COUNT(&quot;Number of Reviews&quot;) as has_reviews,
+  COUNT(&quot;Listening Time&quot;) as has_duration,
+  COUNT(&quot;Ranks and Genre&quot;) as has_genre
+FROM Audible_2020;</sql><sql name="EDA">SELECT 
+    MIN(CAST(&quot;Price&quot; AS REAL)) AS min_price,
+    MAX(CAST(&quot;Price&quot; AS REAL)) AS max_price,
+    ROUND(AVG(CAST(&quot;Price&quot; AS REAL)), 2) AS avg_price,
+    COUNT(*) AS total
+FROM Audible_2020;</sql><sql name="EDA">SELECT &quot;Book Name&quot;, &quot;Price&quot;
+FROM Audible_2020
+ORDER BY CAST(&quot;Price&quot; AS REAL) DESC
+LIMIT 10;</sql><sql name="Data Manipulation">-- Adding USD price column (1 USD = 83 INR approximately)
+-- We will use this clean table for all analysis going forward
+CREATE TABLE audible_clean AS
+SELECT
+    &quot;Book Name&quot;,
+    &quot;Author&quot;,
+    CAST(&quot;Rating&quot; AS REAL)              AS rating,
+    CAST(&quot;Number of Reviews&quot; AS INTEGER) AS reviews,
+    CAST(&quot;Price&quot; AS REAL)               AS price_inr,
+    ROUND(CAST(&quot;Price&quot; AS REAL) / 83, 2) AS price_usd,
+    &quot;Description&quot;,
+    &quot;Listening Time&quot;,
+    &quot;Ranks and Genre&quot;
+FROM Audible_2020
+WHERE &quot;Rating&quot; IS NOT NULL;
+
+SELECT 
+    &quot;Book Name&quot;,
+    price_inr,
+    price_usd
+FROM audible_clean
+LIMIT 10;</sql><sql name="Duration vs Rating">WITH duration_calc AS (
+    SELECT
+        &quot;Book Name&quot;,
+        rating,
+        reviews,
+        price_usd,
+        CAST(
+            CASE
+                WHEN &quot;Listening Time&quot; LIKE '%hours%'
+                THEN SUBSTR(&quot;Listening Time&quot;, 1, 
+                     INSTR(&quot;Listening Time&quot;, ' hour') - 1)
+                ELSE '0'
+            END
+        AS INTEGER) * 60 +
+        CAST(
+            CASE
+                WHEN &quot;Listening Time&quot; LIKE '%minutes%'
+                THEN TRIM(SUBSTR(
+                    &quot;Listening Time&quot;,
+                    INSTR(&quot;Listening Time&quot;, 'and ') + 4,
+                    INSTR(&quot;Listening Time&quot;, ' minute') - 
+                    INSTR(&quot;Listening Time&quot;, 'and ') - 4))
+                ELSE '0'
+            END
+        AS INTEGER) AS total_minutes
+    FROM audible_clean
+    WHERE &quot;Listening Time&quot; IS NOT NULL
+),
+bucketed AS (
+    SELECT *,
+        CASE
+            WHEN total_minutes &lt; 180 THEN '1. Short (under 3 hrs)'
+            WHEN total_minutes &lt; 360 THEN '2. Medium (3-6 hrs)'
+            WHEN total_minutes &lt; 600 THEN '3. Long (6-10 hrs)'
+            ELSE                          '4. Very Long (10+ hrs)'
+        END AS length_category
+    FROM duration_calc
+    WHERE total_minutes &gt; 0
+)
+SELECT
+    length_category,
+    COUNT(*)                   AS total_books,
+    ROUND(AVG(rating), 2)     AS avg_rating,
+    ROUND(AVG(reviews), 0)    AS avg_reviews,
+    ROUND(AVG(price_usd), 2)  AS avg_price_usd
+FROM bucketed
+GROUP BY length_category
+ORDER BY length_category;
+</sql><sql name="Top Authors by Quality and Popularity">WITH author_stats AS (
+    SELECT
+        &quot;Author&quot;,
+        COUNT(*)                   AS total_books,
+        ROUND(AVG(rating), 2)     AS avg_rating,
+        ROUND(MIN(rating), 1)     AS lowest_rating,
+        ROUND(MAX(rating), 1)     AS highest_rating,
+        SUM(reviews)               AS total_reviews,
+        ROUND(AVG(price_usd), 2)  AS avg_price_usd
+    FROM audible_clean
+    WHERE rating IS NOT NULL
+      AND price_usd &gt; 0
+    GROUP BY &quot;Author&quot;
+    HAVING COUNT(*) &gt;= 2
+),
+ranked AS (
+    SELECT *,
+        RANK() OVER (ORDER BY avg_rating DESC)    AS quality_rank,
+        RANK() OVER (ORDER BY total_reviews DESC) AS popularity_rank
+    FROM author_stats
+)
+SELECT
+    quality_rank,
+    &quot;Author&quot;,
+    total_books,
+    avg_rating,
+    lowest_rating,
+    highest_rating,
+    total_reviews,
+    popularity_rank,
+    avg_price_usd
+FROM ranked
+WHERE quality_rank &lt;= 20
+ORDER BY quality_rank;</sql><sql name="Genre Analysis">WITH genre_extracted AS (
+    SELECT
+        &quot;Book Name&quot;,
+        rating,
+        reviews,
+        -- Extract primary genre: text after first &quot;#1 in&quot; 
+        -- removing the Audible Audiobooks overall rank
+        CASE
+            WHEN &quot;Ranks and Genre&quot; LIKE '%#1 in %'
+            THEN TRIM(
+                SUBSTR(
+                    &quot;Ranks and Genre&quot;,
+                    INSTR(&quot;Ranks and Genre&quot;, '#1 in ') + 6,
+                    CASE
+                        WHEN INSTR(
+                            SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#1 in ') + 6), ',') &gt; 0
+                        THEN INSTR(
+                            SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#1 in ') + 6), ',') - 1
+                        ELSE 100
+                    END
+                )
+            )
+            ELSE 'Uncategorized'
+        END AS primary_genre
+    FROM audible_clean
+    WHERE &quot;Ranks and Genre&quot; IS NOT NULL
+      AND rating IS NOT NULL
+)
+SELECT
+    primary_genre,
+    COUNT(*)               AS total_books,
+    ROUND(AVG(rating), 2) AS avg_rating,
+    ROUND(AVG(reviews), 0) AS avg_reviews,
+    SUM(reviews)           AS total_reviews
+FROM genre_extracted
+WHERE primary_genre != 'Uncategorized'
+  AND primary_genre NOT LIKE '%Audible Audiobooks%'
+  AND LENGTH(primary_genre) &gt; 3
+GROUP BY primary_genre
+ORDER BY total_books DESC
+LIMIT 20;</sql><sql name="Duration Analysis Table">CREATE TABLE duration_analysis AS
+WITH duration_calc AS (
+    SELECT
+        &quot;Book Name&quot;,
+        rating,
+        reviews,
+        price_usd,
+        CAST(
+            CASE
+                WHEN &quot;Listening Time&quot; LIKE '%hours%'
+                THEN SUBSTR(&quot;Listening Time&quot;, 1, 
+                     INSTR(&quot;Listening Time&quot;, ' hour') - 1)
+                ELSE '0'
+            END
+        AS INTEGER) * 60 +
+        CAST(
+            CASE
+                WHEN &quot;Listening Time&quot; LIKE '%minutes%'
+                THEN TRIM(SUBSTR(
+                    &quot;Listening Time&quot;,
+                    INSTR(&quot;Listening Time&quot;, 'and ') + 4,
+                    INSTR(&quot;Listening Time&quot;, ' minute') - 
+                    INSTR(&quot;Listening Time&quot;, 'and ') - 4))
+                ELSE '0'
+            END
+        AS INTEGER) AS total_minutes
+    FROM audible_clean
+),
+bucketed AS (
+    SELECT *,
+        CASE
+            WHEN total_minutes &lt; 180 THEN '1. Short (under 3 hrs)'
+            WHEN total_minutes &lt; 360 THEN '2. Medium (3-6 hrs)'
+            WHEN total_minutes &lt; 600 THEN '3. Long (6-10 hrs)'
+            ELSE                          '4. Very Long (10+ hrs)'
+        END AS length_category
+    FROM duration_calc
+    WHERE total_minutes &gt; 0
+)
+SELECT
+    length_category,
+    COUNT(*)                   AS total_books,
+    ROUND(AVG(rating), 2)     AS avg_rating,
+    ROUND(AVG(reviews), 0)    AS avg_reviews,
+    ROUND(AVG(price_usd), 2)  AS avg_price_usd
+FROM bucketed
+GROUP BY length_category
+ORDER BY length_category;</sql><sql name="Author Analysis Table">CREATE TABLE author_analysis AS
+WITH author_stats AS (
+    SELECT
+        &quot;Author&quot;,
+        COUNT(*)                   AS total_books,
+        ROUND(AVG(rating), 2)     AS avg_rating,
+        ROUND(MIN(rating), 1)     AS lowest_rating,
+        ROUND(MAX(rating), 1)     AS highest_rating,
+        SUM(reviews)               AS total_reviews,
+        ROUND(AVG(price_usd), 2)  AS avg_price_usd
+    FROM audible_clean
+    WHERE rating IS NOT NULL
+      AND price_usd &gt; 0
+    GROUP BY &quot;Author&quot;
+    HAVING COUNT(*) &gt;= 2
+),
+ranked AS (
+    SELECT *,
+        RANK() OVER (ORDER BY avg_rating DESC)    AS quality_rank,
+        RANK() OVER (ORDER BY total_reviews DESC) AS popularity_rank
+    FROM author_stats
+)
+SELECT
+    quality_rank,
+    &quot;Author&quot;,
+    total_books,
+    avg_rating,
+    lowest_rating,
+    highest_rating,
+    total_reviews,
+    popularity_rank,
+    avg_price_usd
+FROM ranked
+WHERE quality_rank &lt;= 20
+ORDER BY quality_rank;</sql><sql name="Genre Analysis Table">CREATE TABLE genre_analysis AS
+WITH genre_extracted AS (
+    SELECT
+        &quot;Book Name&quot;,
+        rating,
+        reviews,
+        CASE
+            WHEN &quot;Ranks and Genre&quot; LIKE '%#1 in %'
+            THEN TRIM(
+                SUBSTR(
+                    &quot;Ranks and Genre&quot;,
+                    INSTR(&quot;Ranks and Genre&quot;, '#1 in ') + 6,
+                    CASE
+                        WHEN INSTR(
+                            SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#1 in ') + 6), ',') &gt; 0
+                        THEN INSTR(
+                            SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#1 in ') + 6), ',') - 1
+                        ELSE 100
+                    END
+                )
+            )
+            ELSE 'Uncategorized'
+        END AS primary_genre
+    FROM audible_clean
+    WHERE &quot;Ranks and Genre&quot; IS NOT NULL
+      AND rating IS NOT NULL
+)
+SELECT
+    primary_genre,
+    COUNT(*)               AS total_books,
+    ROUND(AVG(rating), 2) AS avg_rating,
+    ROUND(AVG(reviews), 0) AS avg_reviews,
+    SUM(reviews)           AS total_reviews
+FROM genre_extracted
+WHERE primary_genre != 'Uncategorized'
+  AND primary_genre NOT LIKE '%Audible Audiobooks%'
+  AND LENGTH(primary_genre) &gt; 3
+GROUP BY primary_genre
+ORDER BY total_books DESC
+LIMIT 20;</sql><sql name="Master Table">DROP TABLE IF EXISTS audible_master;
+
+CREATE TABLE audible_master AS
+WITH base AS (
+    SELECT
+        &quot;Book Name&quot;                                     AS book_name,
+        &quot;Author&quot;                                        AS author,
+        CAST(&quot;Rating&quot; AS REAL)                         AS rating,
+        CAST(&quot;Number of Reviews&quot; AS INTEGER)            AS reviews,
+        ROUND(CAST(&quot;Price&quot; AS REAL) / 83, 2)          AS price_usd,
+        &quot;Listening Time&quot;                                AS listening_time_raw,
+
+        CAST(
+            CASE
+                WHEN &quot;Listening Time&quot; LIKE '%hours%'
+                THEN SUBSTR(&quot;Listening Time&quot;, 1,
+                     INSTR(&quot;Listening Time&quot;, ' hour') - 1)
+                ELSE '0'
+            END
+        AS INTEGER) * 60 +
+        CAST(
+            CASE
+                WHEN &quot;Listening Time&quot; LIKE '%minutes%'
+                THEN TRIM(SUBSTR(
+                    &quot;Listening Time&quot;,
+                    INSTR(&quot;Listening Time&quot;, 'and ') + 4,
+                    INSTR(&quot;Listening Time&quot;, ' minute') -
+                    INSTR(&quot;Listening Time&quot;, 'and ') - 4))
+                ELSE '0'
+            END
+        AS INTEGER)                                    AS duration_mins,
+
+        -- Skip &quot;Audible Audiobooks&quot; entry, get first REAL genre
+        -- Find second occurrence of &quot;#&quot; which is the first real genre
+        CASE
+            WHEN LENGTH(&quot;Ranks and Genre&quot;) - 
+                 LENGTH(REPLACE(&quot;Ranks and Genre&quot;, '#', '')) &gt;= 2
+            THEN
+                TRIM(SUBSTR(
+                    -- Get text after second # sign
+                    &quot;Ranks and Genre&quot;,
+                    -- Position of second # 
+                    INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                        INSTR(&quot;Ranks and Genre&quot;, '#') + 1), '#') +
+                        INSTR(&quot;Ranks and Genre&quot;, '#') + 1 +
+                    -- Skip to after &quot;in &quot;
+                    INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                        INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                        INSTR(&quot;Ranks and Genre&quot;, '#') + 1), '#') +
+                        INSTR(&quot;Ranks and Genre&quot;, '#') + 1), ' in ') + 2,
+                    -- Take until next comma
+                    CASE
+                        WHEN INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1), '#') +
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1 +
+                            INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1), '#') +
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1), ' in ') + 2), ',') &gt; 0
+                        THEN INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1), '#') +
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1 +
+                            INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(SUBSTR(&quot;Ranks and Genre&quot;,
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1), '#') +
+                            INSTR(&quot;Ranks and Genre&quot;, '#') + 1), ' in ') + 2), ',') - 1
+                        ELSE 60
+                    END
+                ))
+            ELSE 'General'
+        END                                            AS primary_genre
+
+    FROM Audible_2020
+    WHERE CAST(&quot;Rating&quot; AS REAL) &gt; 0
+      AND &quot;Listening Time&quot; IS NOT NULL
+      AND CAST(&quot;Price&quot; AS REAL) &gt; 0
+)
+SELECT
+    book_name,
+    author,
+    rating,
+    reviews,
+    price_usd,
+    duration_mins,
+    CASE
+        WHEN duration_mins &lt; 180  THEN 'Short (under 3 hrs)'
+        WHEN duration_mins &lt; 360  THEN 'Medium (3-6 hrs)'
+        WHEN duration_mins &lt; 600  THEN 'Long (6-10 hrs)'
+        ELSE                           'Very Long (10+ hrs)'
+    END                                                AS duration_category,
+    -- Clean up genre — remove anything with &quot;See Top&quot; or &quot;Audible Audiobooks&quot;
+    CASE
+        WHEN primary_genre LIKE '%See Top%'
+          OR primary_genre LIKE '%Audible Audiobooks%'
+          OR primary_genre LIKE '%Originals%'
+          OR LENGTH(TRIM(primary_genre)) &lt; 3
+        THEN 'General'
+        ELSE primary_genre
+    END                                                AS primary_genre
+FROM base
+WHERE duration_mins &gt; 0;</sql><sql name="SQL 15">SELECT COUNT(*) FROM audible_master;
+SELECT * FROM audible_master LIMIT 5;
+
+SELECT COUNT(*) FROM audible_master
+
+SELECT COUNT(*) FROM audible_master;
+
+-- Check genres look correct now
+SELECT primary_genre, COUNT(*) as total
+FROM audible_master
+GROUP BY primary_genre
+ORDER BY total DESC
+LIMIT 15;</sql><current_tab id="12"/></tab_sql></sqlb_project>
