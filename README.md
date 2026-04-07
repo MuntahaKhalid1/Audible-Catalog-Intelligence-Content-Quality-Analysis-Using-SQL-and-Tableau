@@ -69,11 +69,11 @@ The 6 to 10 hour window appears to be the satisfaction sweet spot. Listeners fee
 A duration quality signal could be incorporated into the recommendation engine as a soft weighting factor, steering first-time listeners in particular toward titles in this range before expanding their listening patterns.
 
 
-### Finding Two: The Hidden Gem Problem: High Quality Authors Are Invisible
+### Finding Two: Untapped Discoverability: High Quality Authors Waiting to Be Found
 
 The quadrant analysis of author performance reveals a striking pattern. Authors with perfect or near-perfect 5.0 star ratings across multiple titles have fewer than 30 total reviews combined. Meanwhile authors ranked further down by quality with a 4.8 average rating have accumulated thousands of reviews.
 
-This is not a quality problem. It is a discovery problem.
+This is an untapped opportunity waiting for the right recommendation strategy to unlock it.
 
 **What this means for recommendation design:**
 The catalog contains authors whose quality is exceptional but whose audience is negligible. These Hidden Gem authors represent a low-risk, high-reward opportunity. The content already exists. The quality signal is already strong. What is missing is the audience path.
@@ -84,12 +84,12 @@ A targeted recommendation intervention, such as surfacing Hidden Gem authors to 
 A Hidden Gem editorial program similar to what Spotify does with its Fresh Finds playlist could surface algorithmically identified high-quality low-discovery titles through curated email campaigns, homepage placement, or a dedicated discovery shelf within the app. This is a measurable experiment with a clear before and after metric: review volume growth for the featured titles.
 
 
-### Finding Three: Rating Inflation Makes Review Volume the Real Quality Signal
+### Finding Three: Beyond Star Ratings: A Richer Signal for Content Quality
 
 The rating distribution analysis reveals that 1,799 out of 1,919 titles in this dataset rate between 4.0 and 5.0. Only 120 titles sit below 4.0. In practical terms this means star rating alone cannot differentiate a good audiobook from an exceptional one. The scale has compressed.
 
 **What this means for data governance and metrics design:**
-If star rating is used as a primary input in recommendation algorithms or content performance dashboards, it may be systematically overstating catalog health. A 4.2 star book and a 4.8 star book appear close on a 5 point scale but may represent dramatically different listener experiences.
+Combining star rating with review volume creates a richer and more actionable quality signal that gives content teams a more complete picture of listener engagement. A 4.2 star book and a 4.8 star book appear close on a 5 point scale but may represent dramatically different listener experiences.
 
 Review volume by contrast is not inflated. An author with 10,000 reviews at 4.6 stars represents a fundamentally different quality signal than an author with 8 reviews at 4.9 stars. Weighting recommendations and performance metrics by a combined score of rating multiplied by log of review volume would produce a more honest and actionable quality rank.
 
@@ -99,7 +99,7 @@ Redefine the internal catalog quality score from raw star rating to a weighted e
 
 ## The Overall Strategic Recommendation
 
-Audible does not need more content to improve listener satisfaction. It needs smarter infrastructure to connect listeners with the quality that already exists in the catalog.
+Audible is sitting on a significant opportunity, the quality is already there in the catalog and smarter infrastructure to surface it could meaningfully improve listener satisfaction without acquiring a single new title.
 
 The three findings point to the same underlying opportunity: a recommendation and discovery layer that uses quality signals more intelligently would improve satisfaction metrics, unlock value from high-quality hidden titles, and give the data team better leading indicators for content performance. This is a data infrastructure problem as much as it is a product problem, and it sits directly within the remit of a Business Intelligence team that owns KPI design, metric governance, and insight delivery to leadership.
 
